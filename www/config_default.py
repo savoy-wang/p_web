@@ -9,7 +9,7 @@ Default configurations.
 __author__ = 'Savoy Wang'
 
 
-config = {
+configs = {
     'debug': True,
     'db': {
         'host': '10.10.212.2',
