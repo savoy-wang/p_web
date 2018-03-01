@@ -12,13 +12,16 @@ __author__ = 'Savoy Wang'
 import re, time, json, logging, hashlib, base64, asyncio
 
 
+import markdown2
+
+
 from coroweb import get, post
 
 
 from models import User, Comment, Blog, next_id
 
 
-from apis import APIValueError, APIError, APIPermissionError
+from apis import APIValueError, APIError, APIPermissionError, Page
 
 
 from aiohttp import web
@@ -46,6 +49,10 @@ def get_page_index(page_str):
         p = 1
     return p
 
+
+def text2html(text):
+    lines = map(lambda s:'<p>%s</p>' % s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt'), filter(lambda s: s.strip() != '', text.split('\n')))
+    return ''.join(lines)
 
 @get('/')
 async def index(request):
@@ -131,8 +138,6 @@ async def api_register_user(*, email, name, passwd):
     if len(users) > 0:
         raise APIError('register:failed', 'email', 'Email is already in use.')
     uid = next_id()
-    print(passwd)
-    print('2333')
     sha1_passwd = '%s:%s' % (uid, passwd)
     user = User(id=uid, name=name.strip(), email=email, passwd=hashlib.sha1(sha1_passwd.encode('utf-8')).hexdigest(), image='http://www.gravatar.com/avatar/%s?d=mm&s=120' % hashlib.md5(email.encode('utf-8')).hexdigest())
     await user.save()
@@ -173,8 +178,6 @@ async def authenticate(*, email, passwd):
     sha1.update(user.id.encode('utf-8'))
     sha1.update(b':')
     sha1.update(passwd.encode('utf-8'))
-    print(passwd)
-    print(sha1.hexdigest())
     if user.passwd != sha1.hexdigest():
         raise APIValueError('passwd', 'Invalid password')
     # authenticate ok. set cookie
@@ -200,5 +203,49 @@ async def api_create_blog(request, *, name, summary, content):
     return blog
 
 
+@get('/api/blogs')
+async def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = await Blog.findNumber('count(id)')
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=p, blogs=())
+    blogs = await Blog.findAll(orderBy='created_at desc', limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)
 
 
+@get('/manage/blogs')
+def manage_blogs(*, page='1'):
+    return {
+        '__template__':'manage_blogs.html',
+        'page_index': get_page_index(page)
+    }
+
+
+@get('/manage/blogs/create')
+def manage_create_blog():
+    return {
+        '__template__': 'manage_blog_edit.html',
+        'id': '',
+        'action': '/api/blogs'
+    }
+
+
+@get('/blog/{id}')
+async def get_blog(id):
+    blog = await Blog.find(id)
+    comments = await Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown2.markdown(blog.content)
+    return {
+        '__template__': 'blog.html',
+        'blog': blog,
+        'comments': comments
+    }
+
+
+@get('/api/blogs/{id}')
+async def api_get_blog(*, id):
+    blog = await Blog.find(id)
+    return blog

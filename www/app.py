@@ -62,7 +62,10 @@ def auth_factory(app, handler):
             if user:
                 logging.info('set current user: %s' % user.email)
                 request.__user__ = user
-        if request.path.startswith('/manage') and (request.__user__ is None or not request.__user__.admin):
+        print(request.__user__)
+        print(request.__user__.admin)
+        if request.path.startswith('/manage/') and (request.__user__ is None or not request.__user__.admin):
+            print('233333333333')
             return web.HTTPFound('/signin')
         return (yield from handler(request))
     return auth
@@ -104,6 +107,7 @@ async def response_factory(app, handler):
                 resp.content_type = 'application/json;charset=utf-8'
                 return resp
             else:
+                r['__user__'] = request.__user__
                 resp = web.Response(body=app['__templating__'].get_template(template).render(**r).encode('utf-8'))
                 resp.content_type = 'text/html;charset=utf-8'
                 return resp
@@ -138,7 +142,7 @@ def datetime_filter(t):
 async def init(loop):
     await orm.create_pool(loop=loop, host='10.10.212.2', port=3306, user='root', password='montnets', db='awesome')
     app = web.Application(loop=loop, middlewares=[
-        logger_factory, response_factory
+        logger_factory, auth_factory, response_factory
     ])
     init_jinja2(app, filters=dict(datetime=datetime_filter))
     add_routes(app, 'handlers')
